@@ -48,8 +48,8 @@ impl State {
 
     run_file :: (&mut Self, path: string) -> Result[(), Error] {
         path_string := path.to_owned()
-        result := luaL_dofile(self.state, path_string.as_cstring())
-        return if result == LUA_OK then Ok() else Err(Error(result))
+        lua_try(luaL_dofile(self.state, path_string.as_cstring()))
+        return Ok()
     }
 
     call :: (&mut Self, function: string) -> Result[(), Error] {
