@@ -1,0 +1,78 @@
+use import std.string
+
+io  :: import std.io
+fmt :: import std.fmt
+
+use import lua
+
+#export_scope
+
+Error :: enum #repr("C") #tag_type(i32) {
+    Yield    = 1
+    Run      = 2
+    Syntax   = 3
+    Mem      = 4
+    GCMM     = 5
+    Err      = 6
+}
+
+Type :: enum #repr("C") #tag_type(i32) {
+    None            = -1
+    Nil             = 0
+    Boolean         = 1
+    Lightuserdata   = 2
+    Number          = 3
+    String          = 4
+    Table           = 5
+    Function        = 6
+    Userdata        = 7
+    Thread          = 8
+}
+
+State :: struct {
+    state : ^mut lua_State
+}
+
+impl State {
+    new :: () -> Result[State, Error] {
+        state := luaL_newstate()
+        if state == null {
+            return Err(Error.Mem)
+        }
+        return Ok(State(state))
+    }
+
+    open_libs :: (&mut Self) {
+        luaL_openlibs(self.state)
+    }
+
+    run_file :: (&mut Self, path: string) -> Result[(), Error] {
+        path_string := path.to_owned()
+        result := luaL_dofile(self.state, path_string.as_cstring())
+        return if result == LUA_OK then Ok() else Err(Error(result))
+    }
+
+    call :: (&mut Self, function: string) -> Result[(), Error] {
+        name := function.to_owned()
+        typ := Type(lua_getglobal(self.state, name.as_cstring()))
+        if typ != .Function {
+            return Err(Error.Run)
+        }
+        lua_try(lua_pcall(self.state, 0, 0, 0))
+        return Ok()
+    }
+}
+
+impl Drop for State {
+    drop :: (&Self) {
+        lua_close(self.state)
+    }
+}
+
+lua_try :: (c: Code) #macro {
+    result := @insert(c)
+    if result != LUA_OK {
+        return Err(Error(result))
+    }
+    result
+}

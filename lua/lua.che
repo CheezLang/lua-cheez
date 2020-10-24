@@ -1,0 +1,955 @@
+
+#lib("./lib/binding.lib")
+#lib("./lib/lua.lib")
+
+#export_scope
+
+LUA_MULTRET   : i32 : -1
+LUA_OK        : i32 : 0
+LUA_YIELD     : i32 : 1
+LUA_ERRRUN    : i32 : 2
+LUA_ERRSYNTAX : i32 : 3
+LUA_ERRMEM    : i32 : 4
+LUA_ERRGCMM   : i32 : 5
+LUA_ERRERR    : i32 : 6
+
+/*
+** basic types
+*/
+LUA_TNONE             : i32 : -1
+LUA_TNIL              : i32 : 0
+LUA_TBOOLEAN          : i32 : 1
+LUA_TLIGHTUSERDATA    : i32 : 2
+LUA_TNUMBER           : i32 : 3
+LUA_TSTRING           : i32 : 4
+LUA_TTABLE            : i32 : 5
+LUA_TFUNCTION         : i32 : 6
+LUA_TUSERDATA         : i32 : 7
+LUA_TTHREAD           : i32 : 8
+
+// #defines
+lua_tostring :: (L: ^mut lua_State, idx: i32) -> c_string {
+    return lua_tolstring(L, idx, null)
+}
+
+lua_tonumber :: (L: ^mut lua_State, idx: i32) -> lua_Number {
+    return lua_tonumberx(L, idx, null)
+}
+
+lua_pop :: (L: ^mut lua_State, n: i32) {
+    lua_settop(L, -n - 1)
+}
+
+lua_pushcfunction :: (L: ^mut lua_State, f: lua_CFunction) {
+    lua_pushcclosure(L, f, 0)
+}
+
+lua_register :: (L: ^mut lua_State, n: c_string, f: lua_CFunction) {
+    lua_pushcfunction(L, f)
+    lua_setglobal(L, n)
+}
+
+lua_isfunction :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TFUNCTION }
+lua_istable :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TTABLE }
+lua_islightuserdata :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TLIGHTUSERDATA }
+lua_isnil :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TNIL }
+lua_isboolean :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TBOOLEAN }
+lua_isthread :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TTHREAD }
+lua_isnone :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TNONE }
+lua_isnoneornil :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) <= 0 }
+
+lua_pcall :: (L: ^mut lua_State, nargs: i32, nresults: i32, errfunc: i32) -> i32 {
+    return lua_pcallk(L, nargs, nresults, errfunc, 0, null)
+}
+
+luaL_dostring :: (L: ^mut lua_State, s: c_string) -> i32 {
+    a := luaL_loadstring(L, s)
+    if a != 0 {
+        return a
+    }
+    
+    return lua_pcall(L, 0, LUA_MULTRET, 0)
+}
+
+luaL_loadfile :: (L: ^mut lua_State, s: c_string) -> i32 {
+    return luaL_loadfilex(L, s, null)
+}
+
+luaL_dofile :: (L: ^mut lua_State, s: c_string) -> i32 {
+    a := luaL_loadfile(L, s)
+    if a != 0 {
+        return a
+    }
+    
+    return lua_pcall(L, 0, LUA_MULTRET, 0)
+}
+
+FILE        :: struct {}
+lua_State   :: struct {}
+luaL_Buffer :: struct {}
+CallInfo    :: struct {}
+
+va_list :: ^mut char8
+size_t :: u64
+ptrdiff_t :: i64
+lua_Number :: f64
+lua_Integer :: i64
+lua_Unsigned :: u64
+lua_KContext :: ptrdiff_t
+lua_CFunction :: fn(^mut lua_State) -> i32
+lua_KFunction :: fn(^mut lua_State, i32, lua_KContext) -> i32
+lua_Reader :: fn(^mut lua_State, ^mut void, ^mut size_t) -> ^char8
+lua_Writer :: fn(^mut lua_State, ^mut void, size_t, ^mut void) -> i32
+lua_Alloc :: fn(^mut void, ^mut void, size_t, size_t) -> ^mut void
+lua_WarnFunction :: fn(^mut void, ^char8, i32) -> void
+lua_Hook :: fn(^mut lua_State, ^mut lua_Debug) -> void
+lua_Debug :: struct #copy {
+    event : i32 = default
+    name : ^char8 = default
+    namewhat : ^char8 = default
+    what : ^char8 = default
+    source : ^char8 = default
+    srclen : size_t = default
+    currentline : i32 = default
+    linedefined : i32 = default
+    lastlinedefined : i32 = default
+    nups : u8 = default
+    nparams : u8 = default
+    isvararg : char8 = default
+    istailcall : char8 = default
+    ftransfer : u16 = default
+    ntransfer : u16 = default
+    short_src : [60]char8 = default
+    i_ci : ^mut CallInfo = default
+}
+luaL_Reg :: struct #copy {
+    name : ^char8 = default
+    func : lua_CFunction = default
+}
+luaL_Stream :: struct #copy {
+    f : ^mut FILE = default
+    closef : lua_CFunction = default
+}
+lua_newstate :: (_f: lua_Alloc, _ud: ^mut void) -> ^mut lua_State {
+    mut result : ^mut lua_State = default
+    __c__lua_newstate(^result, _f, _ud)
+    return result
+}
+lua_close :: (_L: ^mut lua_State) {
+    __c__lua_close(_L)
+}
+lua_newthread :: (_L: ^mut lua_State) -> ^mut lua_State {
+    mut result : ^mut lua_State = default
+    __c__lua_newthread(^result, _L)
+    return result
+}
+lua_resetthread :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_resetthread(^result, _L)
+    return result
+}
+lua_atpanic :: (_L: ^mut lua_State, _panicf: lua_CFunction) -> lua_CFunction {
+    mut result : lua_CFunction = default
+    __c__lua_atpanic(^result, _L, _panicf)
+    return result
+}
+lua_version :: (_L: ^mut lua_State) -> lua_Number {
+    mut result : lua_Number = default
+    __c__lua_version(^result, _L)
+    return result
+}
+lua_absindex :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_absindex(^result, _L, _idx)
+    return result
+}
+lua_gettop :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_gettop(^result, _L)
+    return result
+}
+lua_settop :: (_L: ^mut lua_State, _idx: i32) {
+    __c__lua_settop(_L, _idx)
+}
+lua_pushvalue :: (_L: ^mut lua_State, _idx: i32) {
+    __c__lua_pushvalue(_L, _idx)
+}
+lua_rotate :: (_L: ^mut lua_State, _idx: i32, _n: i32) {
+    __c__lua_rotate(_L, _idx, _n)
+}
+lua_copy :: (_L: ^mut lua_State, _fromidx: i32, _toidx: i32) {
+    __c__lua_copy(_L, _fromidx, _toidx)
+}
+lua_checkstack :: (_L: ^mut lua_State, _n: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_checkstack(^result, _L, _n)
+    return result
+}
+lua_xmove :: (_from: ^mut lua_State, _to: ^mut lua_State, _n: i32) {
+    __c__lua_xmove(_from, _to, _n)
+}
+lua_isnumber :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_isnumber(^result, _L, _idx)
+    return result
+}
+lua_isstring :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_isstring(^result, _L, _idx)
+    return result
+}
+lua_iscfunction :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_iscfunction(^result, _L, _idx)
+    return result
+}
+lua_isinteger :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_isinteger(^result, _L, _idx)
+    return result
+}
+lua_isuserdata :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_isuserdata(^result, _L, _idx)
+    return result
+}
+lua_type :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_type(^result, _L, _idx)
+    return result
+}
+lua_typename :: (_L: ^mut lua_State, _tp: i32) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_typename(^result, _L, _tp)
+    return result
+}
+lua_tonumberx :: (_L: ^mut lua_State, _idx: i32, _isnum: ^mut i32) -> lua_Number {
+    mut result : lua_Number = default
+    __c__lua_tonumberx(^result, _L, _idx, _isnum)
+    return result
+}
+lua_tointegerx :: (_L: ^mut lua_State, _idx: i32, _isnum: ^mut i32) -> lua_Integer {
+    mut result : lua_Integer = default
+    __c__lua_tointegerx(^result, _L, _idx, _isnum)
+    return result
+}
+lua_toboolean :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_toboolean(^result, _L, _idx)
+    return result
+}
+lua_tolstring :: (_L: ^mut lua_State, _idx: i32, _len: ^mut size_t) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_tolstring(^result, _L, _idx, _len)
+    return result
+}
+lua_rawlen :: (_L: ^mut lua_State, _idx: i32) -> lua_Unsigned {
+    mut result : lua_Unsigned = default
+    __c__lua_rawlen(^result, _L, _idx)
+    return result
+}
+lua_tocfunction :: (_L: ^mut lua_State, _idx: i32) -> lua_CFunction {
+    mut result : lua_CFunction = default
+    __c__lua_tocfunction(^result, _L, _idx)
+    return result
+}
+lua_touserdata :: (_L: ^mut lua_State, _idx: i32) -> ^mut void {
+    mut result : ^mut void = default
+    __c__lua_touserdata(^result, _L, _idx)
+    return result
+}
+lua_tothread :: (_L: ^mut lua_State, _idx: i32) -> ^mut lua_State {
+    mut result : ^mut lua_State = default
+    __c__lua_tothread(^result, _L, _idx)
+    return result
+}
+lua_topointer :: (_L: ^mut lua_State, _idx: i32) -> ^mut void {
+    mut result : ^mut void = default
+    __c__lua_topointer(^result, _L, _idx)
+    return result
+}
+lua_arith :: (_L: ^mut lua_State, _op: i32) {
+    __c__lua_arith(_L, _op)
+}
+lua_rawequal :: (_L: ^mut lua_State, _idx1: i32, _idx2: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_rawequal(^result, _L, _idx1, _idx2)
+    return result
+}
+lua_compare :: (_L: ^mut lua_State, _idx1: i32, _idx2: i32, _op: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_compare(^result, _L, _idx1, _idx2, _op)
+    return result
+}
+lua_pushnil :: (_L: ^mut lua_State) {
+    __c__lua_pushnil(_L)
+}
+lua_pushnumber :: (_L: ^mut lua_State, _n: lua_Number) {
+    __c__lua_pushnumber(_L, _n)
+}
+lua_pushinteger :: (_L: ^mut lua_State, _n: lua_Integer) {
+    __c__lua_pushinteger(_L, _n)
+}
+lua_pushlstring :: (_L: ^mut lua_State, _s: ^char8, _len: size_t) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_pushlstring(^result, _L, _s, _len)
+    return result
+}
+lua_pushstring :: (_L: ^mut lua_State, _s: ^char8) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_pushstring(^result, _L, _s)
+    return result
+}
+lua_pushvfstring :: (_L: ^mut lua_State, _fmt: ^char8, _argp: va_list) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_pushvfstring(^result, _L, _fmt, _argp)
+    return result
+}
+lua_pushfstring :: (_L: ^mut lua_State, _fmt: ^char8) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_pushfstring(^result, _L, _fmt)
+    return result
+}
+lua_pushcclosure :: (_L: ^mut lua_State, _fn: lua_CFunction, _n: i32) {
+    __c__lua_pushcclosure(_L, _fn, _n)
+}
+lua_pushboolean :: (_L: ^mut lua_State, _b: i32) {
+    __c__lua_pushboolean(_L, _b)
+}
+lua_pushlightuserdata :: (_L: ^mut lua_State, _p: ^mut void) {
+    __c__lua_pushlightuserdata(_L, _p)
+}
+lua_pushthread :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_pushthread(^result, _L)
+    return result
+}
+lua_getglobal :: (_L: ^mut lua_State, _name: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__lua_getglobal(^result, _L, _name)
+    return result
+}
+lua_gettable :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_gettable(^result, _L, _idx)
+    return result
+}
+lua_getfield :: (_L: ^mut lua_State, _idx: i32, _k: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__lua_getfield(^result, _L, _idx, _k)
+    return result
+}
+lua_geti :: (_L: ^mut lua_State, _idx: i32, _n: lua_Integer) -> i32 {
+    mut result : i32 = default
+    __c__lua_geti(^result, _L, _idx, _n)
+    return result
+}
+lua_rawget :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_rawget(^result, _L, _idx)
+    return result
+}
+lua_rawgeti :: (_L: ^mut lua_State, _idx: i32, _n: lua_Integer) -> i32 {
+    mut result : i32 = default
+    __c__lua_rawgeti(^result, _L, _idx, _n)
+    return result
+}
+lua_rawgetp :: (_L: ^mut lua_State, _idx: i32, _p: ^mut void) -> i32 {
+    mut result : i32 = default
+    __c__lua_rawgetp(^result, _L, _idx, _p)
+    return result
+}
+lua_createtable :: (_L: ^mut lua_State, _narr: i32, _nrec: i32) {
+    __c__lua_createtable(_L, _narr, _nrec)
+}
+lua_newuserdatauv :: (_L: ^mut lua_State, _sz: size_t, _nuvalue: i32) -> ^mut void {
+    mut result : ^mut void = default
+    __c__lua_newuserdatauv(^result, _L, _sz, _nuvalue)
+    return result
+}
+lua_getmetatable :: (_L: ^mut lua_State, _objindex: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_getmetatable(^result, _L, _objindex)
+    return result
+}
+lua_getiuservalue :: (_L: ^mut lua_State, _idx: i32, _n: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_getiuservalue(^result, _L, _idx, _n)
+    return result
+}
+lua_setglobal :: (_L: ^mut lua_State, _name: ^char8) {
+    __c__lua_setglobal(_L, _name)
+}
+lua_settable :: (_L: ^mut lua_State, _idx: i32) {
+    __c__lua_settable(_L, _idx)
+}
+lua_setfield :: (_L: ^mut lua_State, _idx: i32, _k: ^char8) {
+    __c__lua_setfield(_L, _idx, _k)
+}
+lua_seti :: (_L: ^mut lua_State, _idx: i32, _n: lua_Integer) {
+    __c__lua_seti(_L, _idx, _n)
+}
+lua_rawset :: (_L: ^mut lua_State, _idx: i32) {
+    __c__lua_rawset(_L, _idx)
+}
+lua_rawseti :: (_L: ^mut lua_State, _idx: i32, _n: lua_Integer) {
+    __c__lua_rawseti(_L, _idx, _n)
+}
+lua_rawsetp :: (_L: ^mut lua_State, _idx: i32, _p: ^mut void) {
+    __c__lua_rawsetp(_L, _idx, _p)
+}
+lua_setmetatable :: (_L: ^mut lua_State, _objindex: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_setmetatable(^result, _L, _objindex)
+    return result
+}
+lua_setiuservalue :: (_L: ^mut lua_State, _idx: i32, _n: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_setiuservalue(^result, _L, _idx, _n)
+    return result
+}
+lua_callk :: (_L: ^mut lua_State, _nargs: i32, _nresults: i32, _ctx: lua_KContext, _k: lua_KFunction) {
+    __c__lua_callk(_L, _nargs, _nresults, _ctx, _k)
+}
+lua_pcallk :: (_L: ^mut lua_State, _nargs: i32, _nresults: i32, _errfunc: i32, _ctx: lua_KContext, _k: lua_KFunction) -> i32 {
+    mut result : i32 = default
+    __c__lua_pcallk(^result, _L, _nargs, _nresults, _errfunc, _ctx, _k)
+    return result
+}
+lua_load :: (_L: ^mut lua_State, _reader: lua_Reader, _dt: ^mut void, _chunkname: ^char8, _mode: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__lua_load(^result, _L, _reader, _dt, _chunkname, _mode)
+    return result
+}
+lua_dump :: (_L: ^mut lua_State, _writer: lua_Writer, _data: ^mut void, _strip: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_dump(^result, _L, _writer, _data, _strip)
+    return result
+}
+lua_yieldk :: (_L: ^mut lua_State, _nresults: i32, _ctx: lua_KContext, _k: lua_KFunction) -> i32 {
+    mut result : i32 = default
+    __c__lua_yieldk(^result, _L, _nresults, _ctx, _k)
+    return result
+}
+lua_resume :: (_L: ^mut lua_State, _from: ^mut lua_State, _narg: i32, _nres: ^mut i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_resume(^result, _L, _from, _narg, _nres)
+    return result
+}
+lua_status :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_status(^result, _L)
+    return result
+}
+lua_isyieldable :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_isyieldable(^result, _L)
+    return result
+}
+lua_setwarnf :: (_L: ^mut lua_State, _f: lua_WarnFunction, _ud: ^mut void) {
+    __c__lua_setwarnf(_L, _f, _ud)
+}
+lua_warning :: (_L: ^mut lua_State, _msg: ^char8, _tocont: i32) {
+    __c__lua_warning(_L, _msg, _tocont)
+}
+lua_gc :: (_L: ^mut lua_State, _what: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_gc(^result, _L, _what)
+    return result
+}
+lua_error :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_error(^result, _L)
+    return result
+}
+lua_next :: (_L: ^mut lua_State, _idx: i32) -> i32 {
+    mut result : i32 = default
+    __c__lua_next(^result, _L, _idx)
+    return result
+}
+lua_concat :: (_L: ^mut lua_State, _n: i32) {
+    __c__lua_concat(_L, _n)
+}
+lua_len :: (_L: ^mut lua_State, _idx: i32) {
+    __c__lua_len(_L, _idx)
+}
+lua_stringtonumber :: (_L: ^mut lua_State, _s: ^char8) -> size_t {
+    mut result : size_t = default
+    __c__lua_stringtonumber(^result, _L, _s)
+    return result
+}
+lua_getallocf :: (_L: ^mut lua_State, _ud: ^mut ^mut void) -> lua_Alloc {
+    mut result : lua_Alloc = default
+    __c__lua_getallocf(^result, _L, _ud)
+    return result
+}
+lua_setallocf :: (_L: ^mut lua_State, _f: lua_Alloc, _ud: ^mut void) {
+    __c__lua_setallocf(_L, _f, _ud)
+}
+lua_toclose :: (_L: ^mut lua_State, _idx: i32) {
+    __c__lua_toclose(_L, _idx)
+}
+lua_getstack :: (_L: ^mut lua_State, _level: i32, _ar: ^mut lua_Debug) -> i32 {
+    mut result : i32 = default
+    __c__lua_getstack(^result, _L, _level, _ar)
+    return result
+}
+lua_getinfo :: (_L: ^mut lua_State, _what: ^char8, _ar: ^mut lua_Debug) -> i32 {
+    mut result : i32 = default
+    __c__lua_getinfo(^result, _L, _what, _ar)
+    return result
+}
+lua_getlocal :: (_L: ^mut lua_State, _ar: ^mut lua_Debug, _n: i32) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_getlocal(^result, _L, _ar, _n)
+    return result
+}
+lua_setlocal :: (_L: ^mut lua_State, _ar: ^mut lua_Debug, _n: i32) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_setlocal(^result, _L, _ar, _n)
+    return result
+}
+lua_getupvalue :: (_L: ^mut lua_State, _funcindex: i32, _n: i32) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_getupvalue(^result, _L, _funcindex, _n)
+    return result
+}
+lua_setupvalue :: (_L: ^mut lua_State, _funcindex: i32, _n: i32) -> ^char8 {
+    mut result : ^char8 = default
+    __c__lua_setupvalue(^result, _L, _funcindex, _n)
+    return result
+}
+lua_upvalueid :: (_L: ^mut lua_State, _fidx: i32, _n: i32) -> ^mut void {
+    mut result : ^mut void = default
+    __c__lua_upvalueid(^result, _L, _fidx, _n)
+    return result
+}
+lua_upvaluejoin :: (_L: ^mut lua_State, _fidx1: i32, _n1: i32, _fidx2: i32, _n2: i32) {
+    __c__lua_upvaluejoin(_L, _fidx1, _n1, _fidx2, _n2)
+}
+lua_sethook :: (_L: ^mut lua_State, _func: lua_Hook, _mask: i32, _count: i32) {
+    __c__lua_sethook(_L, _func, _mask, _count)
+}
+lua_gethook :: (_L: ^mut lua_State) -> lua_Hook {
+    mut result : lua_Hook = default
+    __c__lua_gethook(^result, _L)
+    return result
+}
+lua_gethookmask :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_gethookmask(^result, _L)
+    return result
+}
+lua_gethookcount :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__lua_gethookcount(^result, _L)
+    return result
+}
+lua_setcstacklimit :: (_L: ^mut lua_State, _limit: u32) -> i32 {
+    mut result : i32 = default
+    __c__lua_setcstacklimit(^result, _L, _limit)
+    return result
+}
+luaopen_base :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_base(^result, _L)
+    return result
+}
+luaopen_coroutine :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_coroutine(^result, _L)
+    return result
+}
+luaopen_table :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_table(^result, _L)
+    return result
+}
+luaopen_io :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_io(^result, _L)
+    return result
+}
+luaopen_os :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_os(^result, _L)
+    return result
+}
+luaopen_string :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_string(^result, _L)
+    return result
+}
+luaopen_utf8 :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_utf8(^result, _L)
+    return result
+}
+luaopen_math :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_math(^result, _L)
+    return result
+}
+luaopen_debug :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_debug(^result, _L)
+    return result
+}
+luaopen_package :: (_L: ^mut lua_State) -> i32 {
+    mut result : i32 = default
+    __c__luaopen_package(^result, _L)
+    return result
+}
+luaL_openlibs :: (_L: ^mut lua_State) {
+    __c__luaL_openlibs(_L)
+}
+luaL_checkversion_ :: (_L: ^mut lua_State, _ver: lua_Number, _sz: size_t) {
+    __c__luaL_checkversion_(_L, _ver, _sz)
+}
+luaL_getmetafield :: (_L: ^mut lua_State, _obj: i32, _e: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_getmetafield(^result, _L, _obj, _e)
+    return result
+}
+luaL_callmeta :: (_L: ^mut lua_State, _obj: i32, _e: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_callmeta(^result, _L, _obj, _e)
+    return result
+}
+luaL_tolstring :: (_L: ^mut lua_State, _idx: i32, _len: ^mut size_t) -> ^char8 {
+    mut result : ^char8 = default
+    __c__luaL_tolstring(^result, _L, _idx, _len)
+    return result
+}
+luaL_argerror :: (_L: ^mut lua_State, _arg: i32, _extramsg: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_argerror(^result, _L, _arg, _extramsg)
+    return result
+}
+luaL_typeerror :: (_L: ^mut lua_State, _arg: i32, _tname: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_typeerror(^result, _L, _arg, _tname)
+    return result
+}
+luaL_checklstring :: (_L: ^mut lua_State, _arg: i32, _l: ^mut size_t) -> ^char8 {
+    mut result : ^char8 = default
+    __c__luaL_checklstring(^result, _L, _arg, _l)
+    return result
+}
+luaL_optlstring :: (_L: ^mut lua_State, _arg: i32, _def: ^char8, _l: ^mut size_t) -> ^char8 {
+    mut result : ^char8 = default
+    __c__luaL_optlstring(^result, _L, _arg, _def, _l)
+    return result
+}
+luaL_checknumber :: (_L: ^mut lua_State, _arg: i32) -> lua_Number {
+    mut result : lua_Number = default
+    __c__luaL_checknumber(^result, _L, _arg)
+    return result
+}
+luaL_optnumber :: (_L: ^mut lua_State, _arg: i32, _def: lua_Number) -> lua_Number {
+    mut result : lua_Number = default
+    __c__luaL_optnumber(^result, _L, _arg, _def)
+    return result
+}
+luaL_checkinteger :: (_L: ^mut lua_State, _arg: i32) -> lua_Integer {
+    mut result : lua_Integer = default
+    __c__luaL_checkinteger(^result, _L, _arg)
+    return result
+}
+luaL_optinteger :: (_L: ^mut lua_State, _arg: i32, _def: lua_Integer) -> lua_Integer {
+    mut result : lua_Integer = default
+    __c__luaL_optinteger(^result, _L, _arg, _def)
+    return result
+}
+luaL_checkstack :: (_L: ^mut lua_State, _sz: i32, _msg: ^char8) {
+    __c__luaL_checkstack(_L, _sz, _msg)
+}
+luaL_checktype :: (_L: ^mut lua_State, _arg: i32, _t: i32) {
+    __c__luaL_checktype(_L, _arg, _t)
+}
+luaL_checkany :: (_L: ^mut lua_State, _arg: i32) {
+    __c__luaL_checkany(_L, _arg)
+}
+luaL_newmetatable :: (_L: ^mut lua_State, _tname: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_newmetatable(^result, _L, _tname)
+    return result
+}
+luaL_setmetatable :: (_L: ^mut lua_State, _tname: ^char8) {
+    __c__luaL_setmetatable(_L, _tname)
+}
+luaL_testudata :: (_L: ^mut lua_State, _ud: i32, _tname: ^char8) -> ^mut void {
+    mut result : ^mut void = default
+    __c__luaL_testudata(^result, _L, _ud, _tname)
+    return result
+}
+luaL_checkudata :: (_L: ^mut lua_State, _ud: i32, _tname: ^char8) -> ^mut void {
+    mut result : ^mut void = default
+    __c__luaL_checkudata(^result, _L, _ud, _tname)
+    return result
+}
+luaL_where :: (_L: ^mut lua_State, _lvl: i32) {
+    __c__luaL_where(_L, _lvl)
+}
+luaL_error :: (_L: ^mut lua_State, _fmt: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_error(^result, _L, _fmt)
+    return result
+}
+luaL_checkoption :: (_L: ^mut lua_State, _arg: i32, _def: ^char8, _lst: ^mut ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_checkoption(^result, _L, _arg, _def, _lst)
+    return result
+}
+luaL_fileresult :: (_L: ^mut lua_State, _stat: i32, _fname: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_fileresult(^result, _L, _stat, _fname)
+    return result
+}
+luaL_execresult :: (_L: ^mut lua_State, _stat: i32) -> i32 {
+    mut result : i32 = default
+    __c__luaL_execresult(^result, _L, _stat)
+    return result
+}
+luaL_ref :: (_L: ^mut lua_State, _t: i32) -> i32 {
+    mut result : i32 = default
+    __c__luaL_ref(^result, _L, _t)
+    return result
+}
+luaL_unref :: (_L: ^mut lua_State, _t: i32, _ref: i32) {
+    __c__luaL_unref(_L, _t, _ref)
+}
+luaL_loadfilex :: (_L: ^mut lua_State, _filename: ^char8, _mode: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_loadfilex(^result, _L, _filename, _mode)
+    return result
+}
+luaL_loadbufferx :: (_L: ^mut lua_State, _buff: ^char8, _sz: size_t, _name: ^char8, _mode: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_loadbufferx(^result, _L, _buff, _sz, _name, _mode)
+    return result
+}
+luaL_loadstring :: (_L: ^mut lua_State, _s: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_loadstring(^result, _L, _s)
+    return result
+}
+luaL_newstate :: () -> ^mut lua_State {
+    mut result : ^mut lua_State = default
+    __c__luaL_newstate(^result)
+    return result
+}
+luaL_len :: (_L: ^mut lua_State, _idx: i32) -> lua_Integer {
+    mut result : lua_Integer = default
+    __c__luaL_len(^result, _L, _idx)
+    return result
+}
+luaL_addgsub :: (_b: ^mut luaL_Buffer, _s: ^char8, _p: ^char8, _r: ^char8) {
+    __c__luaL_addgsub(_b, _s, _p, _r)
+}
+luaL_gsub :: (_L: ^mut lua_State, _s: ^char8, _p: ^char8, _r: ^char8) -> ^char8 {
+    mut result : ^char8 = default
+    __c__luaL_gsub(^result, _L, _s, _p, _r)
+    return result
+}
+luaL_setfuncs :: (_L: ^mut lua_State, _l: ^mut luaL_Reg, _nup: i32) {
+    __c__luaL_setfuncs(_L, _l, _nup)
+}
+luaL_getsubtable :: (_L: ^mut lua_State, _idx: i32, _fname: ^char8) -> i32 {
+    mut result : i32 = default
+    __c__luaL_getsubtable(^result, _L, _idx, _fname)
+    return result
+}
+luaL_traceback :: (_L: ^mut lua_State, _L1: ^mut lua_State, _msg: ^char8, _level: i32) {
+    __c__luaL_traceback(_L, _L1, _msg, _level)
+}
+luaL_requiref :: (_L: ^mut lua_State, _modname: ^char8, _openf: lua_CFunction, _glb: i32) {
+    __c__luaL_requiref(_L, _modname, _openf, _glb)
+}
+luaL_buffinit :: (_L: ^mut lua_State, _B: ^mut luaL_Buffer) {
+    __c__luaL_buffinit(_L, _B)
+}
+luaL_prepbuffsize :: (_B: ^mut luaL_Buffer, _sz: size_t) -> ^mut char8 {
+    mut result : ^mut char8 = default
+    __c__luaL_prepbuffsize(^result, _B, _sz)
+    return result
+}
+luaL_addlstring :: (_B: ^mut luaL_Buffer, _s: ^char8, _l: size_t) {
+    __c__luaL_addlstring(_B, _s, _l)
+}
+luaL_addstring :: (_B: ^mut luaL_Buffer, _s: ^char8) {
+    __c__luaL_addstring(_B, _s)
+}
+luaL_addvalue :: (_B: ^mut luaL_Buffer) {
+    __c__luaL_addvalue(_B)
+}
+luaL_pushresult :: (_B: ^mut luaL_Buffer) {
+    __c__luaL_pushresult(_B)
+}
+luaL_pushresultsize :: (_B: ^mut luaL_Buffer, _sz: size_t) {
+    __c__luaL_pushresultsize(_B, _sz)
+}
+luaL_buffinitsize :: (_L: ^mut lua_State, _B: ^mut luaL_Buffer, _sz: size_t) -> ^mut char8 {
+    mut result : ^mut char8 = default
+    __c__luaL_buffinitsize(^result, _L, _B, _sz)
+    return result
+}
+
+// ==========================================================
+// ==========================================================
+// ==========================================================
+
+#file_scope
+
+__c__lua_newstate :: (ret: ^mut ^mut lua_State, _f: lua_Alloc, _ud: ^mut void);
+__c__lua_close :: (_L: ^mut lua_State);
+__c__lua_newthread :: (ret: ^mut ^mut lua_State, _L: ^mut lua_State);
+__c__lua_resetthread :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_atpanic :: (ret: ^mut lua_CFunction, _L: ^mut lua_State, _panicf: lua_CFunction);
+__c__lua_version :: (ret: ^mut lua_Number, _L: ^mut lua_State);
+__c__lua_absindex :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_gettop :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_settop :: (_L: ^mut lua_State, _idx: i32);
+__c__lua_pushvalue :: (_L: ^mut lua_State, _idx: i32);
+__c__lua_rotate :: (_L: ^mut lua_State, _idx: i32, _n: i32);
+__c__lua_copy :: (_L: ^mut lua_State, _fromidx: i32, _toidx: i32);
+__c__lua_checkstack :: (ret: ^mut i32, _L: ^mut lua_State, _n: i32);
+__c__lua_xmove :: (_from: ^mut lua_State, _to: ^mut lua_State, _n: i32);
+__c__lua_isnumber :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_isstring :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_iscfunction :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_isinteger :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_isuserdata :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_type :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_typename :: (ret: ^mut ^char8, _L: ^mut lua_State, _tp: i32);
+__c__lua_tonumberx :: (ret: ^mut lua_Number, _L: ^mut lua_State, _idx: i32, _isnum: ^mut i32);
+__c__lua_tointegerx :: (ret: ^mut lua_Integer, _L: ^mut lua_State, _idx: i32, _isnum: ^mut i32);
+__c__lua_toboolean :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_tolstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _idx: i32, _len: ^mut size_t);
+__c__lua_rawlen :: (ret: ^mut lua_Unsigned, _L: ^mut lua_State, _idx: i32);
+__c__lua_tocfunction :: (ret: ^mut lua_CFunction, _L: ^mut lua_State, _idx: i32);
+__c__lua_touserdata :: (ret: ^mut ^mut void, _L: ^mut lua_State, _idx: i32);
+__c__lua_tothread :: (ret: ^mut ^mut lua_State, _L: ^mut lua_State, _idx: i32);
+__c__lua_topointer :: (ret: ^mut ^mut void, _L: ^mut lua_State, _idx: i32);
+__c__lua_arith :: (_L: ^mut lua_State, _op: i32);
+__c__lua_rawequal :: (ret: ^mut i32, _L: ^mut lua_State, _idx1: i32, _idx2: i32);
+__c__lua_compare :: (ret: ^mut i32, _L: ^mut lua_State, _idx1: i32, _idx2: i32, _op: i32);
+__c__lua_pushnil :: (_L: ^mut lua_State);
+__c__lua_pushnumber :: (_L: ^mut lua_State, _n: lua_Number);
+__c__lua_pushinteger :: (_L: ^mut lua_State, _n: lua_Integer);
+__c__lua_pushlstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _s: ^char8, _len: size_t);
+__c__lua_pushstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _s: ^char8);
+__c__lua_pushvfstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _fmt: ^char8, _argp: va_list);
+__c__lua_pushfstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _fmt: ^char8);
+__c__lua_pushcclosure :: (_L: ^mut lua_State, _fn: lua_CFunction, _n: i32);
+__c__lua_pushboolean :: (_L: ^mut lua_State, _b: i32);
+__c__lua_pushlightuserdata :: (_L: ^mut lua_State, _p: ^mut void);
+__c__lua_pushthread :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_getglobal :: (ret: ^mut i32, _L: ^mut lua_State, _name: ^char8);
+__c__lua_gettable :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_getfield :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32, _k: ^char8);
+__c__lua_geti :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32, _n: lua_Integer);
+__c__lua_rawget :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_rawgeti :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32, _n: lua_Integer);
+__c__lua_rawgetp :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32, _p: ^mut void);
+__c__lua_createtable :: (_L: ^mut lua_State, _narr: i32, _nrec: i32);
+__c__lua_newuserdatauv :: (ret: ^mut ^mut void, _L: ^mut lua_State, _sz: size_t, _nuvalue: i32);
+__c__lua_getmetatable :: (ret: ^mut i32, _L: ^mut lua_State, _objindex: i32);
+__c__lua_getiuservalue :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32, _n: i32);
+__c__lua_setglobal :: (_L: ^mut lua_State, _name: ^char8);
+__c__lua_settable :: (_L: ^mut lua_State, _idx: i32);
+__c__lua_setfield :: (_L: ^mut lua_State, _idx: i32, _k: ^char8);
+__c__lua_seti :: (_L: ^mut lua_State, _idx: i32, _n: lua_Integer);
+__c__lua_rawset :: (_L: ^mut lua_State, _idx: i32);
+__c__lua_rawseti :: (_L: ^mut lua_State, _idx: i32, _n: lua_Integer);
+__c__lua_rawsetp :: (_L: ^mut lua_State, _idx: i32, _p: ^mut void);
+__c__lua_setmetatable :: (ret: ^mut i32, _L: ^mut lua_State, _objindex: i32);
+__c__lua_setiuservalue :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32, _n: i32);
+__c__lua_callk :: (_L: ^mut lua_State, _nargs: i32, _nresults: i32, _ctx: lua_KContext, _k: lua_KFunction);
+__c__lua_pcallk :: (ret: ^mut i32, _L: ^mut lua_State, _nargs: i32, _nresults: i32, _errfunc: i32, _ctx: lua_KContext, _k: lua_KFunction);
+__c__lua_load :: (ret: ^mut i32, _L: ^mut lua_State, _reader: lua_Reader, _dt: ^mut void, _chunkname: ^char8, _mode: ^char8);
+__c__lua_dump :: (ret: ^mut i32, _L: ^mut lua_State, _writer: lua_Writer, _data: ^mut void, _strip: i32);
+__c__lua_yieldk :: (ret: ^mut i32, _L: ^mut lua_State, _nresults: i32, _ctx: lua_KContext, _k: lua_KFunction);
+__c__lua_resume :: (ret: ^mut i32, _L: ^mut lua_State, _from: ^mut lua_State, _narg: i32, _nres: ^mut i32);
+__c__lua_status :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_isyieldable :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_setwarnf :: (_L: ^mut lua_State, _f: lua_WarnFunction, _ud: ^mut void);
+__c__lua_warning :: (_L: ^mut lua_State, _msg: ^char8, _tocont: i32);
+__c__lua_gc :: (ret: ^mut i32, _L: ^mut lua_State, _what: i32);
+__c__lua_error :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_next :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32);
+__c__lua_concat :: (_L: ^mut lua_State, _n: i32);
+__c__lua_len :: (_L: ^mut lua_State, _idx: i32);
+__c__lua_stringtonumber :: (ret: ^mut size_t, _L: ^mut lua_State, _s: ^char8);
+__c__lua_getallocf :: (ret: ^mut lua_Alloc, _L: ^mut lua_State, _ud: ^mut ^mut void);
+__c__lua_setallocf :: (_L: ^mut lua_State, _f: lua_Alloc, _ud: ^mut void);
+__c__lua_toclose :: (_L: ^mut lua_State, _idx: i32);
+__c__lua_getstack :: (ret: ^mut i32, _L: ^mut lua_State, _level: i32, _ar: ^mut lua_Debug);
+__c__lua_getinfo :: (ret: ^mut i32, _L: ^mut lua_State, _what: ^char8, _ar: ^mut lua_Debug);
+__c__lua_getlocal :: (ret: ^mut ^char8, _L: ^mut lua_State, _ar: ^mut lua_Debug, _n: i32);
+__c__lua_setlocal :: (ret: ^mut ^char8, _L: ^mut lua_State, _ar: ^mut lua_Debug, _n: i32);
+__c__lua_getupvalue :: (ret: ^mut ^char8, _L: ^mut lua_State, _funcindex: i32, _n: i32);
+__c__lua_setupvalue :: (ret: ^mut ^char8, _L: ^mut lua_State, _funcindex: i32, _n: i32);
+__c__lua_upvalueid :: (ret: ^mut ^mut void, _L: ^mut lua_State, _fidx: i32, _n: i32);
+__c__lua_upvaluejoin :: (_L: ^mut lua_State, _fidx1: i32, _n1: i32, _fidx2: i32, _n2: i32);
+__c__lua_sethook :: (_L: ^mut lua_State, _func: lua_Hook, _mask: i32, _count: i32);
+__c__lua_gethook :: (ret: ^mut lua_Hook, _L: ^mut lua_State);
+__c__lua_gethookmask :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_gethookcount :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__lua_setcstacklimit :: (ret: ^mut i32, _L: ^mut lua_State, _limit: u32);
+__c__luaopen_base :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_coroutine :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_table :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_io :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_os :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_string :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_utf8 :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_math :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_debug :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaopen_package :: (ret: ^mut i32, _L: ^mut lua_State);
+__c__luaL_openlibs :: (_L: ^mut lua_State);
+__c__luaL_checkversion_ :: (_L: ^mut lua_State, _ver: lua_Number, _sz: size_t);
+__c__luaL_getmetafield :: (ret: ^mut i32, _L: ^mut lua_State, _obj: i32, _e: ^char8);
+__c__luaL_callmeta :: (ret: ^mut i32, _L: ^mut lua_State, _obj: i32, _e: ^char8);
+__c__luaL_tolstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _idx: i32, _len: ^mut size_t);
+__c__luaL_argerror :: (ret: ^mut i32, _L: ^mut lua_State, _arg: i32, _extramsg: ^char8);
+__c__luaL_typeerror :: (ret: ^mut i32, _L: ^mut lua_State, _arg: i32, _tname: ^char8);
+__c__luaL_checklstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _arg: i32, _l: ^mut size_t);
+__c__luaL_optlstring :: (ret: ^mut ^char8, _L: ^mut lua_State, _arg: i32, _def: ^char8, _l: ^mut size_t);
+__c__luaL_checknumber :: (ret: ^mut lua_Number, _L: ^mut lua_State, _arg: i32);
+__c__luaL_optnumber :: (ret: ^mut lua_Number, _L: ^mut lua_State, _arg: i32, _def: lua_Number);
+__c__luaL_checkinteger :: (ret: ^mut lua_Integer, _L: ^mut lua_State, _arg: i32);
+__c__luaL_optinteger :: (ret: ^mut lua_Integer, _L: ^mut lua_State, _arg: i32, _def: lua_Integer);
+__c__luaL_checkstack :: (_L: ^mut lua_State, _sz: i32, _msg: ^char8);
+__c__luaL_checktype :: (_L: ^mut lua_State, _arg: i32, _t: i32);
+__c__luaL_checkany :: (_L: ^mut lua_State, _arg: i32);
+__c__luaL_newmetatable :: (ret: ^mut i32, _L: ^mut lua_State, _tname: ^char8);
+__c__luaL_setmetatable :: (_L: ^mut lua_State, _tname: ^char8);
+__c__luaL_testudata :: (ret: ^mut ^mut void, _L: ^mut lua_State, _ud: i32, _tname: ^char8);
+__c__luaL_checkudata :: (ret: ^mut ^mut void, _L: ^mut lua_State, _ud: i32, _tname: ^char8);
+__c__luaL_where :: (_L: ^mut lua_State, _lvl: i32);
+__c__luaL_error :: (ret: ^mut i32, _L: ^mut lua_State, _fmt: ^char8);
+__c__luaL_checkoption :: (ret: ^mut i32, _L: ^mut lua_State, _arg: i32, _def: ^char8, _lst: ^mut ^char8);
+__c__luaL_fileresult :: (ret: ^mut i32, _L: ^mut lua_State, _stat: i32, _fname: ^char8);
+__c__luaL_execresult :: (ret: ^mut i32, _L: ^mut lua_State, _stat: i32);
+__c__luaL_ref :: (ret: ^mut i32, _L: ^mut lua_State, _t: i32);
+__c__luaL_unref :: (_L: ^mut lua_State, _t: i32, _ref: i32);
+__c__luaL_loadfilex :: (ret: ^mut i32, _L: ^mut lua_State, _filename: ^char8, _mode: ^char8);
+__c__luaL_loadbufferx :: (ret: ^mut i32, _L: ^mut lua_State, _buff: ^char8, _sz: size_t, _name: ^char8, _mode: ^char8);
+__c__luaL_loadstring :: (ret: ^mut i32, _L: ^mut lua_State, _s: ^char8);
+__c__luaL_newstate :: (ret: ^mut ^mut lua_State);
+__c__luaL_len :: (ret: ^mut lua_Integer, _L: ^mut lua_State, _idx: i32);
+__c__luaL_addgsub :: (_b: ^mut luaL_Buffer, _s: ^char8, _p: ^char8, _r: ^char8);
+__c__luaL_gsub :: (ret: ^mut ^char8, _L: ^mut lua_State, _s: ^char8, _p: ^char8, _r: ^char8);
+__c__luaL_setfuncs :: (_L: ^mut lua_State, _l: ^mut luaL_Reg, _nup: i32);
+__c__luaL_getsubtable :: (ret: ^mut i32, _L: ^mut lua_State, _idx: i32, _fname: ^char8);
+__c__luaL_traceback :: (_L: ^mut lua_State, _L1: ^mut lua_State, _msg: ^char8, _level: i32);
+__c__luaL_requiref :: (_L: ^mut lua_State, _modname: ^char8, _openf: lua_CFunction, _glb: i32);
+__c__luaL_buffinit :: (_L: ^mut lua_State, _B: ^mut luaL_Buffer);
+__c__luaL_prepbuffsize :: (ret: ^mut ^mut char8, _B: ^mut luaL_Buffer, _sz: size_t);
+__c__luaL_addlstring :: (_B: ^mut luaL_Buffer, _s: ^char8, _l: size_t);
+__c__luaL_addstring :: (_B: ^mut luaL_Buffer, _s: ^char8);
+__c__luaL_addvalue :: (_B: ^mut luaL_Buffer);
+__c__luaL_pushresult :: (_B: ^mut luaL_Buffer);
+__c__luaL_pushresultsize :: (_B: ^mut luaL_Buffer, _sz: size_t);
+__c__luaL_buffinitsize :: (ret: ^mut ^mut char8, _L: ^mut lua_State, _B: ^mut luaL_Buffer, _sz: size_t);

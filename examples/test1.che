@@ -1,0 +1,25 @@
+use import std.array
+use import std.string
+
+io :: import std.io
+
+use import lua
+lua :: import lua_cheez
+
+Main :: () {
+    match app() {
+        Ok() -> {}
+        Err($err) -> {
+            io.formatln("[ERROR] {}", [&err])
+        }
+    }
+}
+
+app :: () -> Result[(), lua.Error] {
+    state := try(lua.State.new())
+    state.open_libs()
+    try(state.run_file("../examples/test1.lua"))
+    try(state.call("main"))
+
+    return Ok()
+}
