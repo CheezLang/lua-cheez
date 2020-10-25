@@ -16,29 +16,6 @@ function prepend_to_cheez()
 
 #export_scope
 
-LUA_MULTRET   : i32 : -1
-LUA_OK        : i32 : 0
-LUA_YIELD     : i32 : 1
-LUA_ERRRUN    : i32 : 2
-LUA_ERRSYNTAX : i32 : 3
-LUA_ERRMEM    : i32 : 4
-LUA_ERRGCMM   : i32 : 5
-LUA_ERRERR    : i32 : 6
-
-/*
-** basic types
-*/
-LUA_TNONE             : i32 : -1
-LUA_TNIL              : i32 : 0
-LUA_TBOOLEAN          : i32 : 1
-LUA_TLIGHTUSERDATA    : i32 : 2
-LUA_TNUMBER           : i32 : 3
-LUA_TSTRING           : i32 : 4
-LUA_TTABLE            : i32 : 5
-LUA_TFUNCTION         : i32 : 6
-LUA_TUSERDATA         : i32 : 7
-LUA_TTHREAD           : i32 : 8
-
 // #defines
 lua_tostring :: (L: ^mut lua_State, idx: i32) -> c_string {
     return lua_tolstring(L, idx, null)
@@ -128,16 +105,35 @@ function on_typedef(decl, name, text)
     end
 end
 
+macros = {
+    LUA_REGISTRYINDEX   = true,
+    LUAI_MAXSTACK       = true,
+    LUA_EXTRASPACE      = true,
+    LUA_MULTRET         = true,
+    LUA_OK              = true,
+    LUA_YIELD           = true,
+    LUA_ERRRUN          = true,
+    LUA_ERRSYNTAX       = true,
+    LUA_ERRMEM          = true,
+    LUA_ERRGCMM         = true,
+    LUA_ERRERR          = true,
+    LUA_TNONE           = true,
+    LUA_TNIL            = true,
+    LUA_TBOOLEAN        = true,
+    LUA_TLIGHTUSERDATA  = true,
+    LUA_TNUMBER         = true,
+    LUA_TSTRING         = true,
+    LUA_TTABLE          = true,
+    LUA_TFUNCTION       = true,
+    LUA_TUSERDATA       = true,
+    LUA_TTHREAD         = true,
+}
+
 function on_macro(decl, name)
-    index = name:find("lua")
-    if (index == nil)
-    then
-        -- doesn't start with glfw*, so don't emit anything
-        return true, nil
-    else
-        -- starts with glfw*, so emit default
-        return false, nil
-    end
+    if name == "LUA_EXTRASPACE" then return true, (name .. " :: @sizeof(^void)") end
+    if macros[name] then return false, nil end
+
+    return true, nil
 end
 
 function on_function(decl, name)

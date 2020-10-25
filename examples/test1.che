@@ -19,7 +19,7 @@ app :: () -> Result[(), lua.Error] {
     state := try(lua.State.new())
     state.open_libs()
     try(state.run_file("../examples/test1.lua"))
-    try(state.call("main"))
+    try(state.call("main", 0))
 
     return Ok()
 }

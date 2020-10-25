@@ -1,4 +1,5 @@
 use import std.string
+use import std.util
 
 io  :: import std.io
 fmt :: import std.fmt
@@ -7,13 +8,26 @@ use import lua
 
 #export_scope
 
-Error :: enum #repr("C") #tag_type(i32) {
-    Yield    = 1
-    Run      = 2
-    Syntax   = 3
-    Mem      = 4
-    GCMM     = 5
-    Err      = 6
+Error :: enum {
+    Run     : String
+    Syntax
+    Mem
+    GCMM
+    Err
+    Unknown : int
+}
+
+impl Error {
+    from_lua_error :: (value: i32) -> Error {
+        return match value {
+            2 -> Error.Run("".to_owned())
+            3 -> Error.Syntax
+            4 -> Error.Mem
+            5 -> Error.GCMM
+            6 -> Error.Err
+            _ -> Error.Unknown(value)
+        }
+    }
 }
 
 Type :: enum #repr("C") #tag_type(i32) {
@@ -27,6 +41,29 @@ Type :: enum #repr("C") #tag_type(i32) {
     Function        = 6
     Userdata        = 7
     Thread          = 8
+}
+
+ArithmeticOperation :: enum #repr("C") #tag_type(i32) {
+    Add     = 0
+    Sub     = 1
+    Mul     = 2
+    Mod     = 3
+    Pow     = 4
+    Div     = 5
+    IDiv    = 6
+    BAnd    = 7
+    BOr     = 8
+    BXor    = 9
+    Shl     = 10
+    Shr     = 11
+    UnM     = 12
+    BNot    = 13
+}
+
+CompareOperation :: enum #repr("C") #tag_type(i32) {
+    Eq  = 0
+    Lt  = 1
+    Le  = 2
 }
 
 State :: struct {
@@ -52,27 +89,367 @@ impl State {
         return Ok()
     }
 
-    call :: (&mut Self, function: string) -> Result[(), Error] {
-        name := function.to_owned()
-        typ := Type(lua_getglobal(self.state, name.as_cstring()))
-        if typ != .Function {
-            return Err(Error.Run)
-        }
-        lua_try(lua_pcall(self.state, 0, 0, 0))
+    do_string :: (&mut Self, text: string) -> Result[(), Error] {
+        lua_try(luaL_loadbufferx(self.state, cast text.bytes.data, cast text.bytes.length, null, null))
+        lua_try(lua_pcall(self.state, 0, LUA_MULTRET, 0))
         return Ok()
+    }
+
+    call :: (&mut Self, function: string, nargs: int, nresults: Option[int] = None) -> Result[(), Error] {
+        name := function.to_owned()
+        _ := Type(lua_getglobal(self.state, name.as_cstring()))
+        match lua_pcall(self.state, i32(nargs), i32(nresults.unwrap_or(LUA_MULTRET)), 0) {
+            LUA_OK -> {
+                return Ok()
+            }
+
+            LUA_ERRRUN -> {
+                str := String.from_cstring(lua_tostring(self.state, -1))
+                lua_pop(self.state, 1)
+                return Err(Error.Run(str))
+            }
+
+            $err -> {
+                return Err(Error.from_lua_error(err))
+            }
+        }
+        return Ok()
+    }
+
+    check_stack :: (&mut Self, n: int) -> Result[(), Error] {
+        result := lua_checkstack(self.state, i32(n)) != 0
+        return if result then Ok() else Err(Error.Unknown)
+    }
+
+    arith :: (&mut Self, op: ArithmeticOperation) {
+        lua_arith(self.state, i32(op))
+    }
+
+    compare :: (&mut Self, index0: int, index1: int, op: CompareOperation) -> bool {
+        // @todo: can fail?
+        return lua_compare(self.state, i32(index0), i32(index1), i32(op)) != 0
+    }
+
+    concat :: (&mut Self, n: int) {
+        // @todo: can fail
+        lua_concat(self.state, i32(n))
+    }
+
+    copy :: (&mut Self, from: int, to: int) {
+        lua_copy(self.state, i32(from), i32(to))
+    }
+
+    create_table :: (&mut Self, narr: int = 0, nrec: int = 0) {
+        lua_createtable(self.state, i32(narr), i32(nrec))
+    }
+
+    error :: (&mut Self) {
+        _ := lua_error(self.state)
+    }
+
+    // @todo
+    // gc :: (&mut Self) {}
+
+    /// push stack[i][key]
+    get_field :: (&mut Self, index: int, key: string) -> Type {
+        key := key.to_owned()
+        return Type(lua_getfield(self.state, i32(index), key.as_cstring()))
+    }
+
+    get_extra_space :: (&mut Self) -> ^mut void {
+        return pointer_add(cast(^void) self.state, LUA_EXTRASPACE)
+    }
+
+    /// push global[name]
+    get_global :: (&mut Self, name: string) -> Type {
+        name := name.to_owned()
+        return Type(lua_getglobal(self.state, name.as_cstring()))
+    }
+
+    /// push stack[i][i]
+    get_i :: (&mut Self, index: int, i: int) -> Type {
+        return Type(lua_geti(self.state, i32(index), i))
+    }
+
+    /// push stack[index].metatable?
+    get_metatable :: (&mut Self, index: int) -> bool {
+        return lua_getmetatable(self.state, i32(index)) != 0
+    }
+
+    /// push stack[index][stack.top]
+    get_table :: (&mut Self, index: int) -> Type {
+        return Type(lua_gettable(self.state, i32(index)))
+    }
+
+    /// 
+    get_top :: (&mut Self) -> int {
+        return int(lua_gettop(self.state))
+    }
+
+    /// push stack[index][n]
+    get_i_user_value :: (&mut Self, index: int, n: int) -> Type {
+        return Type(lua_geti(self.state, i32(index), n))
+    }
+
+    /// push stack[index] = stack.top, shift rest up
+    get_insert :: (&mut Self, index: int) {
+        lua_rotate(self.state, i32(index), 1)
+    }
+
+    /// 
+    is_bool :: (&mut Self, index: int) -> bool {
+        return lua_isboolean(self.state, i32(index))
+    }
+
+    /// 
+    is_cfunction :: (&mut Self, index: int) -> bool {
+        return lua_iscfunction(self.state, i32(index)) != 0
+    }
+
+    /// 
+    is_function :: (&mut Self, index: int) -> bool {
+        return lua_isfunction(self.state, i32(index))
+    }
+
+    /// 
+    is_int :: (&mut Self, index: int) -> bool {
+        return lua_isinteger(self.state, i32(index)) != 0
+    }
+
+    /// 
+    is_light_user_data :: (&mut Self, index: int) -> bool {
+        return lua_islightuserdata(self.state, i32(index))
+    }
+
+    /// 
+    is_nil :: (&mut Self, index: int) -> bool {
+        return lua_isnil(self.state, i32(index))
+    }
+
+    /// 
+    is_none :: (&mut Self, index: int) -> bool {
+        return lua_isnone(self.state, i32(index))
+    }
+
+    /// 
+    is_none_or_nil :: (&mut Self, index: int) -> bool {
+        return lua_isnoneornil(self.state, i32(index))
+    }
+
+    /// 
+    is_number :: (&mut Self, index: int) -> bool {
+        return lua_isnumber(self.state, i32(index)) != 0
+    }
+
+    /// 
+    is_string :: (&mut Self, index: int) -> bool {
+        return lua_isstring(self.state, i32(index)) != 0
+    }
+
+    /// 
+    is_table :: (&mut Self, index: int) -> bool {
+        return lua_istable(self.state, i32(index))
+    }
+
+    /// 
+    is_thread :: (&mut Self, index: int) -> bool {
+        return lua_isthread(self.state, i32(index))
+    }
+
+    /// 
+    is_user_data :: (&mut Self, index: int) -> bool {
+        return lua_isuserdata(self.state, i32(index)) != 0
+    }
+
+    /// 
+    is_yieldable :: (&mut Self) -> bool {
+        return lua_isyieldable(self.state) != 0
+    }
+
+    /// push #stack[index]
+    len :: (&mut Self, index: int) {
+        lua_len(self.state, i32(index))
+    }
+
+    /// push new userdata(size, nuvalue)
+    new_user_data_uv :: (&mut Self, size: u64, nuvalue: int) -> ^mut void {
+        return lua_newuserdatauv(self.state, size, i32(nuvalue))
+    }
+
+    /// push stack[index][next stack.top]
+    next :: (&mut Self, index: int) -> int {
+        return int(lua_next(self.state, i32(index)))
+    }
+
+    /// pop n
+    pop :: (&mut Self, n: int) {
+        lua_pop(self.state, i32(n))
+    }
+
+    /// push bool
+    push_bool :: (&mut Self, value: bool) {
+        lua_pushboolean(self.state, if value then 1 else 0)
+    }
+
+    /// push cfunction
+    push_cclosure :: (&mut Self, value: lua_CFunction, n: int) {
+        lua_pushcclosure(self.state, value, i32(n))
+    }
+
+    /// push function
+    push_cfunction :: (&mut Self, value: lua_CFunction) {
+        lua_pushcfunction(self.state, value)
+    }
+
+    /// push int
+    push_int :: (&mut Self, value: int) {
+        lua_pushinteger(self.state, value)
+    }
+
+    /// push light_user_data
+    push_light_user_data :: (&mut Self, value: ^mut void) {
+        lua_pushlightuserdata(self.state, value)
+    }
+
+    /// push nil
+    push_nil :: (&mut Self) {
+        lua_pushnil(self.state)
+    }
+
+    /// push number
+    push_number :: (&mut Self, value: f64) {
+        lua_pushnumber(self.state, value)
+    }
+
+    /// push string
+    push_string :: (&mut Self, value: string) {
+        lua_pushlstring(self.state, cast value.bytes.data, cast value.bytes.length)
+    }
+
+    /// push thread
+    push_thread :: (&mut Self) {
+        lua_pushthread(self.state)
+    }
+
+    /// push stack[index]
+    push_value :: (&mut Self, index: int) {
+        lua_pushvalue(self.state, i32(index))
+    }
+
+    /// 
+    register :: (&mut Self, name: string, f: lua_CFunction) {
+        name := name.to_owned()
+        lua_pushcfunction(self.state, f)
+        lua_setglobal(self.state, name.as_cstring())
+    }
+
+    /// stack[index][k] = stack.top
+    set_field :: (&mut Self, index: int, k: string) {
+        k := k.to_owned()
+        lua_setfield(self.state, i32(index), k.as_cstring())
+    }
+
+    /// global[k] = stack.top
+    set_global :: (&mut Self, k: string) {
+        k := k.to_owned()
+        lua_setglobal(self.state, k.as_cstring())
+    }
+
+    /// stack[index][n] = stack.top
+    set_i :: (&mut Self, index: int, n: int) {
+        lua_seti(self.state, i32(index), n)
+    }
+
+    /// 
+    set_i_user_value :: (&mut Self, index: int, n: int) {
+        lua_setiuservalue(self.state, i32(index), i32(n))
+    }
+
+    /// stack[index].metatable = stack.top
+    set_metatable :: (&mut Self, index: int) {
+        lua_setmetatable(self.state, i32(index))
+    }
+
+    /// stack[index][stack.top-1] = stack.top
+    set_table :: (&mut Self, index: int) {
+        lua_settable(self.state, i32(index))
+    }
+
+    /// stack.top = index
+    set_top :: (&mut Self, index: int) {
+        lua_settop(self.state, i32(index))
+    }
+
+    /// 
+    status :: (&mut Self) -> int {
+        return int(lua_status(self.state))
+    }
+
+    /// 
+    to_bool :: (&mut Self, index: int) -> bool {
+        return lua_toboolean(self.state, i32(index)) != 0
+    }
+
+    /// 
+    to_cfunction :: (&mut Self, index: int) -> lua_CFunction {
+        return lua_tocfunction(self.state, i32(index))
+    }
+
+    /// 
+    to_int :: (&mut Self, index: int) -> Result[int, Error] {
+        mut ok : i32 = 0
+        result := lua_tointegerx(self.state, i32(index), ^mut ok)
+        return if ok != 0 then Ok(result) else Err(Error.Unknown)
+    }
+
+    /// 
+    to_string :: (&mut Self, index: int) -> Result[string, Error] {
+        mut len : u64 = 0
+        result := lua_tolstring(self.state, i32(index), ^mut len)
+        return if result != null then Ok(string(cast result, int(len))) else Err(Error.Unknown)
+    }
+
+    /// 
+    to_number :: (&mut Self, index: int) -> Result[f64, Error] {
+        mut ok : i32 = 0
+        result := lua_tonumberx(self.state, i32(index), ^mut ok)
+        return if ok != 0 then Ok(result) else Err(Error.Unknown)
+    }
+
+    /// 
+    to_user_data :: (&mut Self, index: int) -> Result[^void, Error] {
+        result := lua_touserdata(self.state, i32(index))
+        return if result != null then Ok(result) else Err(Error.Unknown)
+    }
+
+    typ :: (&mut Self, index: int) -> Type {
+        return Type(lua_type(self.state, i32(index)))
+    }
+
+    typename :: (&mut Self, typ: Type) -> string {
+        return string.from_cstring(lua_typename(self.state, i32(typ)))
+    }
+
+    upvalue_index :: (&mut Self, i: int) -> int {
+        return LUA_REGISTRYINDEX - i
+    }
+
+    close :: (&mut Self) {
+        if self.state != null then lua_close(self.state)
+        self.state = null
     }
 }
 
 impl Drop for State {
     drop :: (&Self) {
-        lua_close(self.state)
+        @cast(&mut Self, self).close()
     }
 }
 
 lua_try :: (c: Code) #macro {
     result := @insert(c)
     if result != LUA_OK {
-        return Err(Error(result))
+        return Err(Error.from_lua_error(result))
     }
     result
 }

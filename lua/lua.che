@@ -4,29 +4,6 @@
 
 #export_scope
 
-LUA_MULTRET   : i32 : -1
-LUA_OK        : i32 : 0
-LUA_YIELD     : i32 : 1
-LUA_ERRRUN    : i32 : 2
-LUA_ERRSYNTAX : i32 : 3
-LUA_ERRMEM    : i32 : 4
-LUA_ERRGCMM   : i32 : 5
-LUA_ERRERR    : i32 : 6
-
-/*
-** basic types
-*/
-LUA_TNONE             : i32 : -1
-LUA_TNIL              : i32 : 0
-LUA_TBOOLEAN          : i32 : 1
-LUA_TLIGHTUSERDATA    : i32 : 2
-LUA_TNUMBER           : i32 : 3
-LUA_TSTRING           : i32 : 4
-LUA_TTABLE            : i32 : 5
-LUA_TFUNCTION         : i32 : 6
-LUA_TUSERDATA         : i32 : 7
-LUA_TTHREAD           : i32 : 8
-
 // #defines
 lua_tostring :: (L: ^mut lua_State, idx: i32) -> c_string {
     return lua_tolstring(L, idx, null)
@@ -103,6 +80,26 @@ lua_Writer :: fn(^mut lua_State, ^mut void, size_t, ^mut void) -> i32
 lua_Alloc :: fn(^mut void, ^mut void, size_t, size_t) -> ^mut void
 lua_WarnFunction :: fn(^mut void, ^char8, i32) -> void
 lua_Hook :: fn(^mut lua_State, ^mut lua_Debug) -> void
+LUAI_MAXSTACK :: 1000000
+LUA_EXTRASPACE :: @sizeof(^void)
+LUA_MULTRET :: (-1)
+LUA_REGISTRYINDEX :: (-LUAI_MAXSTACK-1000)
+LUA_OK :: 0
+LUA_YIELD :: 1
+LUA_ERRRUN :: 2
+LUA_ERRSYNTAX :: 3
+LUA_ERRMEM :: 4
+LUA_ERRERR :: 5
+LUA_TNONE :: (-1)
+LUA_TNIL :: 0
+LUA_TBOOLEAN :: 1
+LUA_TLIGHTUSERDATA :: 2
+LUA_TNUMBER :: 3
+LUA_TSTRING :: 4
+LUA_TTABLE :: 5
+LUA_TFUNCTION :: 6
+LUA_TUSERDATA :: 7
+LUA_TTHREAD :: 8
 lua_Debug :: struct #copy {
     event : i32 = default
     name : ^char8 = default
