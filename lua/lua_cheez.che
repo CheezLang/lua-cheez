@@ -6,6 +6,11 @@ fmt :: import std.fmt
 
 use import lua
 
+
+lua_upvalueindex :: (i: i32) -> i32 {
+    return LUA_REGISTRYINDEX - i
+}
+
 #export_scope
 
 Error :: enum {
@@ -79,13 +84,22 @@ impl State {
         return Ok(State(state))
     }
 
+    from_state :: (state: ^mut lua_State) -> State {
+        return State(state)
+    }
+
     open_libs :: (&mut Self) {
         luaL_openlibs(self.state)
     }
 
-    run_file :: (&mut Self, path: string) -> Result[(), Error] {
+    do_file :: (&mut Self, path: string) -> Result[(), Error] {
         path_string := path.to_owned()
         lua_try(luaL_dofile(self.state, path_string.as_cstring()))
+        return Ok()
+    }
+
+    push_string_chunk :: (&mut Self, text: string) -> Result[(), Error] {
+        lua_try(luaL_loadbufferx(self.state, cast text.bytes.data, cast text.bytes.length, null, null))
         return Ok()
     }
 
@@ -98,13 +112,22 @@ impl State {
     call :: (&mut Self, function: string, nargs: int, nresults: Option[int] = None) -> Result[(), Error] {
         name := function.to_owned()
         _ := Type(lua_getglobal(self.state, name.as_cstring()))
-        match lua_pcall(self.state, i32(nargs), i32(nresults.unwrap_or(LUA_MULTRET)), 0) {
+        result := lua_pcall(self.state, i32(nargs), i32(nresults.unwrap_or(LUA_MULTRET)), 0)
+        match result {
             LUA_OK -> {
                 return Ok()
             }
 
             LUA_ERRRUN -> {
-                str := String.from_cstring(lua_tostring(self.state, -1))
+                // io.formatln("top: {}, typ: {}", [lua_gettop(self.state), ])
+                str := match Type(lua_type(self.state, -1)) {
+                    .String -> String.from_cstring(lua_tostring(self.state, -1))
+
+                    .Number -> fmt.format("{}", [lua_tonumber(self.state, -1)])
+                    .Boolean -> fmt.format("{}", [lua_toboolean(self.state, -1) != 0])
+
+                    $typ -> "Unknown error".to_owned()
+                }
                 lua_pop(self.state, 1)
                 return Err(Error.Run(str))
             }
@@ -143,6 +166,7 @@ impl State {
         lua_createtable(self.state, i32(narr), i32(nrec))
     }
 
+    /// error stack.top
     error :: (&mut Self) {
         _ := lua_error(self.state)
     }
@@ -157,7 +181,7 @@ impl State {
     }
 
     get_extra_space :: (&mut Self) -> ^mut void {
-        return pointer_add(cast(^void) self.state, LUA_EXTRASPACE)
+        return pointer_add(cast(^void) self.state, -LUA_EXTRASPACE)
     }
 
     /// push global[name]
@@ -336,10 +360,45 @@ impl State {
         lua_pushvalue(self.state, i32(index))
     }
 
+    /// push function
+    push_function :: (&mut Self, f: fn(&mut State) -> Result[int, $T]) {
+        func :: (L: ^mut lua_State) -> i32 {
+            // put all the code which contains cheez features (destructors etc.)
+            // in a separate function so that the actual callback is a "pure" C-like function
+            // otherwise it crashes when there is an error
+            // because lua_error uses longjmp and that doesn't interact
+            // well with cheez features like destructors
+            call :: (L: ^mut lua_State) -> int {
+                mut state := State.from_state(L)
+                defer { state.state = null }
+                func := Function.from_pointer(lua_touserdata(L, lua_upvalueindex(1)), fn(&mut State) -> Result[int, T])
+                result := func(&mut state)
+                return match result {
+                    Ok($nret) -> nret
+
+                    Err($err) -> {
+                        msg := fmt.format("{}", [&err])
+                        lua_pushlstring(L, cast msg.get_raw(), cast msg.get_length())
+                        -1
+                    }
+                }
+            }
+            result := call(L)
+            if result < 0 {
+                return i32(lua_error(L))
+            } else {
+                return i32(result)
+            }
+        }
+
+        lua_pushlightuserdata(self.state, Function.to_pointer(f))
+        lua_pushcclosure(self.state, func, 1)
+    }
+
     /// 
-    register :: (&mut Self, name: string, f: lua_CFunction) {
+    register :: (&mut Self, name: string, f: fn(&mut State) -> Result[int, $T]) {
+        self.push_function(f)
         name := name.to_owned()
-        lua_pushcfunction(self.state, f)
         lua_setglobal(self.state, name.as_cstring())
     }
 
