@@ -6,11 +6,6 @@ fmt :: import std.fmt
 
 use import lua
 
-
-lua_upvalueindex :: (i: i32) -> i32 {
-    return LUA_REGISTRYINDEX - i
-}
-
 #export_scope
 
 Error :: enum {

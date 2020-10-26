@@ -26,6 +26,10 @@ lua_register :: (L: ^mut lua_State, n: c_string, f: lua_CFunction) {
     lua_setglobal(L, n)
 }
 
+lua_upvalueindex :: (i: i32) -> i32 {
+    return LUA_REGISTRYINDEX - i
+}
+
 lua_isfunction :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TFUNCTION }
 lua_istable :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TTABLE }
 lua_islightuserdata :: (L: ^mut lua_State, n: i32) -> bool { return lua_type(L, n) == LUA_TLIGHTUSERDATA }
