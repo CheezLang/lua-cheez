@@ -517,6 +517,10 @@ impl State {
         return LUA_REGISTRYINDEX - i
     }
 
+    ref :: (&mut Self, index: int) -> int {
+        return int(luaL_ref(self.state, i32(index)))
+    }
+
     get_used_memory :: (&mut Self) -> int {
         return int(lua_gc(self.state, LUA_GCCOUNT))
     }
@@ -554,7 +558,12 @@ impl Drop for State {
 lua_try :: (c: Code) #macro {
     result := @insert(c)
     if result != LUA_OK {
-        return Err(Error.from_lua_error(result))
+        self := @link(self)
+        return if self.get_top() > 0 and self.is_string(-1) {
+            Err(Error.Run(String.from_string(self.to_string(-1).unwrap())))
+        } else {
+            Err(Error.from_lua_error(result))
+        }
     }
     result
 }
