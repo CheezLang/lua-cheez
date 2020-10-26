@@ -131,6 +131,18 @@ macros = {
     LUA_TFUNCTION       = true,
     LUA_TUSERDATA       = true,
     LUA_TTHREAD         = true,
+    LUA_GCSTOP          = true,
+    LUA_GCRESTART       = true,
+    LUA_GCCOLLECT       = true,
+    LUA_GCCOUNT         = true,
+    LUA_GCCOUNTB        = true,
+    LUA_GCSTEP          = true,
+    LUA_GCSETPAUSE      = true,
+    LUA_GCSETSTEPMUL    = true,
+    LUA_GCISRUNNING     = true,
+    LUA_GCGEN           = true,
+    LUA_GCINC           = true,
+    
 }
 
 function on_macro(decl, name)

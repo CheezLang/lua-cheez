@@ -17,6 +17,12 @@ Error :: enum {
     Unknown : int
 }
 
+impl Into[String] for Error {
+    into :: (&Self) -> String {
+        return fmt.format("{}", [self])
+    }
+}
+
 impl Error {
     from_lua_error :: (value: i32) -> Error {
         return match value {
@@ -104,7 +110,30 @@ impl State {
         return Ok()
     }
 
-    call :: (&mut Self, function: string, nargs: int, nresults: Option[int] = None) -> Result[(), Error] {
+    call :: (&mut Self, nargs: int, nresults: Option[int] = None) -> Result[(), Error] {
+        result := lua_pcall(self.state, i32(nargs), i32(nresults.unwrap_or(LUA_MULTRET)), 0)
+        // io.formatln("result: {}", [result])
+        return match result {
+            LUA_OK -> Ok()
+
+            LUA_ERRRUN -> {
+                str := match Type(lua_type(self.state, -1)) {
+                    .String -> String.from_cstring(lua_tostring(self.state, -1))
+
+                    .Number -> fmt.format("{}", [lua_tonumber(self.state, -1)])
+                    .Boolean -> fmt.format("{}", [lua_toboolean(self.state, -1) != 0])
+
+                    $typ -> "Unknown error".to_owned()
+                }
+                lua_pop(self.state, 1)
+                Err(Error.Run(str))
+            }
+
+            $err -> Err(Error.from_lua_error(err))
+        }
+    }
+
+    pcall_global :: (&mut Self, function: string, nargs: int, nresults: Option[int] = None) -> Result[(), Error] {
         name := function.to_owned()
         _ := Type(lua_getglobal(self.state, name.as_cstring()))
         result := lua_pcall(self.state, i32(nargs), i32(nresults.unwrap_or(LUA_MULTRET)), 0)
@@ -488,8 +517,30 @@ impl State {
         return LUA_REGISTRYINDEX - i
     }
 
+    get_used_memory :: (&mut Self) -> int {
+        return int(lua_gc(self.state, LUA_GCCOUNT))
+    }
+
+    gc_collect :: (&mut Self) -> int {
+        return int(lua_gc(self.state, LUA_GCCOLLECT))
+    }
+
+    gc_step :: (&mut Self) -> int {
+        return int(lua_gc(self.state, LUA_GCSTEP))
+    }
+
+    gc_stop :: (&mut Self) -> int {
+        return int(lua_gc(self.state, LUA_GCSTOP))
+    }
+
+    gc_restart :: (&mut Self) -> int {
+        return int(lua_gc(self.state, LUA_GCRESTART))
+    }
+
     close :: (&mut Self) {
-        if self.state != null then lua_close(self.state)
+        if self.state != null {
+            lua_close(self.state)
+        }
         self.state = null
     }
 }
