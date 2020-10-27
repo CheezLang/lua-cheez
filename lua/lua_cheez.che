@@ -1,5 +1,6 @@
 use import std.string
 use import std.util
+use import std.unicode
 
 io  :: import std.io
 fmt :: import std.fmt
@@ -367,6 +368,12 @@ impl State {
     /// push number
     push_number :: (&mut Self, value: f64) {
         lua_pushnumber(self.state, value)
+    }
+
+    /// push char
+    push_char :: (&mut Self, value: char) {
+        bytes, len := Utf8.encode(value)
+        lua_pushlstring(self.state, cast bytes.data, cast len)
     }
 
     /// push string
